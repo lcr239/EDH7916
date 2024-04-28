@@ -1,0 +1,243 @@
+---
+title: "Final Project"
+author: "Lindsey Ragsdale"
+date: April 14, 2024
+editor: visual
+editor_options: 
+  chunk_output_type: console
+format: docx
+execute: 
+  echo: FALSE
+  message: FALSE
+---
+
+### Introduction
+
+In 2021, the median earnings of 25-to-34-year-olds with a bachelor’s degree and employed full-time was 55 percent higher than those with a high school diploma (National Center for Education Statistics, 2023). Higher education is an important avenue of social mobility; therefore, policymakers are eager to close existing gaps in access and graduation rates, which are large and growing (Haveman & Smeeding, 2006). One of the first attempts to close these gaps was the creation of the Federal Pell Grant in 1965. The Federal Pell Grant provides low-income students with free money to pursue higher education via college enrollment (Ishitani, 2020). Even though the maximum Pell Grant amount awarded has increased over time, the actual value of the award has decreased. Ishitani (2020) found that “while the 1999–00 maximum Pell Grant award covered 93 percent of tuition and fees for attending public, four-year institutions, the 2019 maximum Pell award covered only 59 percent of public, four-year institution tuition and fees.” This overall reduction in Pell Grant funding makes it difficult for low-income students to enroll, persist, and graduate from higher education. The results of the 2002 Educational Longitudinal Study illustrate this hardship. By 2012 60 percent of students from high socioeconomic backgrounds who were tenth graders in 2002 had earned a bachelor's degree or higher, however, only 14 percent of low socioeconomic students from the same cohort had earned a bachelor's degree or higher (National Center for Education Statistics, 2015). It is imperative that policymakers understand these attainment gaps and develop viable solutions to close these gaps. This paper will examine the six-year attainment rate of bachelor’s degrees for both Pell-Grant and non-Pell-Grant recipients. It will provide overall data and then disaggregate the data by institution type (Public, Private, or For-Profit).
+
+# **Where is this data from?**
+
+*For this project I used a .csv data files from IPEDS survey year 2022, Graduation rate data for Pell Grant and Direct Subsidized Loan recipients, 150% of normal time to complete - cohort year 2016 (4-year) and cohort year 2019 (less-than-4-year) institutions.* This is IPEDS complete data that can be found here: <https://nces.ed.gov/ipeds/datacenter/data/GR2022_PELL_SSL.zip>. Additionally, I used the *Institutional Characteristics* file which cane be found here: <https://nces.ed.gov/ipeds/datacenter/data/HD2022.zip>. *To run this code, save this file in a sub-folder called “data” that sits in the same folder as this .qmd file.*
+
+### **A Note On Omitted Data:**
+
+For simplicity, all data in the data frame that was coded as NA was dropped.
+
+```{r}
+setwd(this.path::here())
+```
+
+```{r}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(haven)
+library(dtplyr)
+library(ggplot2)
+library(knitr)
+library(patchwork)
+library(sf)
+library(tidycensus)
+library(tigris)
+
+```
+
+```{r}
+#| message: false 
+df<-read_csv(file.path("data", "gr2022_pell_ssl.csv"))
+df2<-  read_csv("data/hd2022.csv")
+```
+
+### Calculate Percentages of Pell and Non-Pell Graduates, Join the two Dataframes, and Create Summary Table of Mean Percentage of Pell and Non-Pell graduates
+
+```{r}
+#| message: false
+df_pvt <- df |>
+  select(UNITID, PSGRTYPE, PGADJCT, NRADJCT, NRCMTOT, PGCMTOT, TTCMTOT)
+
+df_pvt <- df_pvt |>
+  filter(PSGRTYPE %in% c(1, 4))
+
+df_pvt <- df_pvt |>
+  mutate(Pell_percent = (PGCMTOT / (PGADJCT)) * 100)
+
+
+df_pvt <- df_pvt |>
+  mutate(NonPell_percent = (NRCMTOT / (NRADJCT)) * 100)
+
+df_sumtable1 <- df_pvt |>
+  summarize(
+    Mean_Pell_percent = mean(Pell_percent, na.rm = TRUE),
+    Mean_NonPell_percent = mean(NonPell_percent, na.rm = TRUE))
+
+kable(df_sumtable1)
+
+combined <-left_join(df_pvt, df2, by = "UNITID")
+
+combined_sumtable_percent <- combined |>
+  pivot_longer(cols = c(Pell_percent, NonPell_percent),
+                                          names_to = "percentage_type",
+                                          values_to = "percentage_value") 
+
+combined_sumtable_percent <- combined_sumtable_percent|>
+  filter(!is.na(CONTROL)) |> group_by(CONTROL, percentage_type) |>
+  summarize(
+   mean_percent_grad = mean(percentage_value, na.rm = TRUE),
+   min_percent_grad = min(percentage_value, na.rm = TRUE),
+   max_percent_grad = max(percentage_value, na.rm = TRUE))
+
+kable(combined_sumtable_percent)
+
+```
+
+The first summary table shows the average percentage of Pell Grant recipients who graduate with a bachelor's degree within 6 years compared with the average percentage of non-Pell Grant students who complete a bachelor's degree within 6 years. Without disaggregating by institution type, the difference in graduation rates is within about two percentage points.
+
+A future examination breaking the data down by institution type is more informative. In this case 1= Public institutions, 2= Private, not-for-profit institution, and 3= Private, for-profit institutions. For simplicity, this report will address 2 as Private and 3 as For-Profit.
+
+At both Public and Private institutions, the percentage of Pell Grant students who graduate within 6 years is smaller than the percentage of non-Pell Grant students who complete their bachelor's degree within 6 years time. This gap was larger at Public institutions than at Private. The percentage of Pell Grant students graduating from For-Profit institutions within 6 years time was slightly larger than the percentage of non-Pell Grant recipients at these institutions.
+
+The summary tables above highlight the minimum, maximum, and mean number of Pell Grant and non-Pell Grant graduates at each institution type. These tables highlight that Public Institutions graduate more Pell Grant and non-Pell Grant students each year.
+
+## Histograms of Pell and Non-Pell Graduates
+
+```{r}
+#| warning: false
+#all
+df_histogram_all <- combined |>
+  pivot_longer(cols = c(Pell_percent, NonPell_percent),
+               names_to = "percentage_type",
+               values_to = "percentage_value")
+ggplot(df_histogram_all) +
+  geom_histogram(aes(x = percentage_value,
+                     fill = percentage_type),
+                 position = "identity",
+                 alpha = 0.5,
+                 color = "black") +
+  scale_fill_viridis_d(option = "C") + 
+  labs(fill = str_wrap("Percentage of Pell Grant and Non-Pell Grant Graduates", 20), 
+       subtitle = NULL,
+       caption = NULL,
+       x = "Percentage",
+       y = "Fequency") +
+  theme_minimal()
+
+#disaggregated
+df_disaggregated_histogram <- combined |>
+  pivot_longer(cols = c(Pell_percent, NonPell_percent),
+               names_to = "percentage_type",
+               values_to = "percentage_value")
+ggplot(df_disaggregated_histogram) +
+  geom_histogram(aes(x = percentage_value,
+                     fill = percentage_type),
+                 position = "identity",
+                 alpha = 0.5,
+                 color = "black") +
+facet_wrap(~CONTROL)+
+  scale_fill_viridis_d(option = "C") + 
+  labs(fill = str_wrap("Percentage of Pell Grant and Non-Pell Grant Graduates By Institution Type", 20), 
+       subtitle = NULL,
+       caption = NULL,
+       x = "Percentage",
+       y = "Fequency") +
+  theme_minimal()
+
+
+```
+
+The first histogram highlights the overall percentage of Pell Grant graduates who graduate within 6 years compared to non-Pell Grant graduates. The data illustrates that non-Pell Grant students graduate at a higher frequency than non-Pell Grant students. The center of the historgram is centered around 50 percent for both groups with some extreme outliers at both 0 and 100 percent.
+
+The center of the Public institution histogram is closer the 35 percent and has a right-skewed distribution. The Private and For-Profit institutions histograms look very similar to the overall histogram.
+
+## Box Plots of Pell and Non-Pell Graduates
+
+```{r}
+#| warning: false
+#all
+df_box_all <- combined |>
+  pivot_longer(cols = c(Pell_percent, NonPell_percent),
+               names_to = "percentage_type",
+               values_to = "percentage_value")  
+
+ggplot(df_box_all)+
+  geom_boxplot(mapping= aes(x= percentage_type,
+                            y= percentage_value,
+                            fill=percentage_type ), 
+               alpha = 0.66) +
+  scale_fill_viridis_d(option = "C") +  
+  labs(fill = str_wrap("Percentage of Pell Grant and Non-Pell Grant Graduates at Public Colleges", 20),
+       x = "Percentage Type",
+       y = "Percentage Value") +
+  theme_minimal()
+
+#ggsave- saves a picture
+
+#disaggregated
+df_boxplot_disaggregated <- combined
+
+df_boxplot_disaggregated <- df_boxplot_disaggregated |>
+  pivot_longer(cols = c(Pell_percent, NonPell_percent),
+               names_to = "percentage_type",
+               values_to = "percentage_value")  
+
+ggplot(df_boxplot_disaggregated)+
+  geom_boxplot(mapping= aes(x= percentage_type,
+                            y= percentage_value,
+                            fill=percentage_type ), 
+               alpha = 0.66) +
+  facet_wrap(~CONTROL)+
+  scale_fill_viridis_d(option = "C") +  
+  labs(fill = str_wrap("Percentage of Pell Grant and Non-Pell Grant Graduates at Public Colleges", 20),
+       x = "Percentage Type",
+       y = "Percentage Value") +
+  theme_minimal()
+
+```
+
+The overall box plot indicates that some institutions graduated 0 percent of both Pell Grant and non-Pell Grant students. However, the median number of Non-Pell Grant students was higher. This pattern held true for both Public and Private institutions, but not the For-Profit which saw a larger median number of Pell students graduate.
+
+## Scatter Plots of Pell and Non-Pell Graduates
+
+```{r}
+#| warning: false
+#all
+ggplot(data = combined,
+       mapping = aes(x = Pell_percent,
+                     y = NonPell_percent)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Scatter Plot of Pell Graduates vs Total Graduates",
+       x = "Pell Graduates Percentage",
+       y = "Non-Pell Graduates Percentage")
+
+#disaggregated
+
+scatter_plot_disaggregated <- combined
+
+  
+
+ggplot(data = scatter_plot_disaggregated,
+       mapping = aes(x = Pell_percent,
+                     y = NonPell_percent)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~CONTROL)+
+  labs(title = "Percentage of Graduates at Public Colleges", 
+       x = "Pell Graduates Percentage",
+       y = "Non-Pell Graduates Percentage")
+
+```
+
+The overall scatter plot shows a strong, positive linear correlation between the percentage of non-Pell Grant graduates and Pell Grant graduates. Disaggregating the data, this correlation is strongest at Public institutions. The linear distribution is not as strong at Private institutions. There is no apparent strong correlation at For-Profit institutions.
+
+### Conclusion
+
+In conclusion, Pell Grant recipients tend to be less likely to graduate with a bachelor's degree in six years time when compared with non-Pell Grant recipients. This indicates that more work needs to be done to close this gap.
+
+### **Citations**
+
+Ishitani, T. (2020). Graduation Rates of Pell Grant Recipients at Public and Private Four-Year Institutions. *College and University*, *95*(4), 10–21.
+
+Kena, G., Musu-Gillette, L., Robinson, J., Wang, X., Rathbun, A., Zhang, J., Wilkinson-Flicker, S., Barmer, A., and Dunlop Velez, E. (2015). The Condition of Education 2015 (NCES 2015-144). U.S. Department of Education, National Center for Education Statistics. Washington, DC. Retrieved \[April 14, 2024\] from <http://nces.ed.gov/pubsearch>.
+
+National Center for Education Statistics. (2023). Annual Earnings by Educational Attainment. *Condition of Education*. U.S. Department of Education, Institute of Education Sciences. Retrieved \[April 14, 2024\], from [https://nces.ed.gov/programs/coe/indicator/cba](https://nces.ed.gov/programs/coe/indicator/cba/annual-earnings).
